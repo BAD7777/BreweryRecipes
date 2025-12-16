@@ -1,32 +1,39 @@
 package dev.jsinco.recipes
 
+import com.dre.brewery.recipe.BRecipe
 import dev.jsinco.brewery.bukkit.api.TheBrewingProjectApi
 import dev.jsinco.recipes.commands.RecipesCommand
 import dev.jsinco.recipes.configuration.GuiConfig
 import dev.jsinco.recipes.configuration.RecipesConfig
 import dev.jsinco.recipes.configuration.RecipesTranslator
 import dev.jsinco.recipes.configuration.SpawnConfig
-import dev.jsinco.recipes.configuration.serialize.ComponentSerializer
-import dev.jsinco.recipes.configuration.serialize.ConfigItemCollectionSerializer
-import dev.jsinco.recipes.configuration.serialize.ConfigItemSerializer
-import dev.jsinco.recipes.configuration.serialize.KeySerializer
-import dev.jsinco.recipes.configuration.serialize.LoreSerializer
-import dev.jsinco.recipes.configuration.serialize.SerdesPackBuilder
-import dev.jsinco.recipes.configuration.serialize.SpawnConfigSerializer
-import dev.jsinco.recipes.core.BreweryRecipe
-import dev.jsinco.recipes.core.RecipeViewManager
+import dev.jsinco.recipes.configuration.serialize.*
+import dev.jsinco.recipes.recipe.BreweryRecipe
+import dev.jsinco.recipes.recipe.RecipeViewManager
 import dev.jsinco.recipes.data.DataManager
 import dev.jsinco.recipes.data.StorageImpl
+import dev.jsinco.recipes.gui.integration.BreweryXGuiInterface
+import dev.jsinco.recipes.gui.integration.GuiIntegration
 import dev.jsinco.recipes.gui.integration.TbpGuiInterface
 import dev.jsinco.recipes.listeners.GuiEventListener
+import dev.jsinco.recipes.listeners.MigrationListener
+import dev.jsinco.recipes.listeners.RecipeListener
 import dev.jsinco.recipes.listeners.RecipeSpawningListener
+import dev.jsinco.recipes.util.BookUtil
+import dev.jsinco.recipes.util.BreweryXRecipeConverter
+import dev.jsinco.recipes.util.ClassUtil
 import dev.jsinco.recipes.util.TBPRecipeConverter
 import eu.okaeri.configs.ConfigManager
 import eu.okaeri.configs.yaml.bukkit.YamlBukkitConfigurer
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents
+import io.papermc.paper.registry.RegistryKey
 import net.kyori.adventure.translation.GlobalTranslator
 import org.bukkit.Bukkit
+import org.bukkit.Material
 import org.bukkit.NamespacedKey
+import org.bukkit.block.Biome
+import org.bukkit.block.BlockType
+import org.bukkit.inventory.ShapelessRecipe
 import org.bukkit.plugin.java.JavaPlugin
 import java.io.File
 
@@ -41,7 +48,7 @@ class Recipes : JavaPlugin() {
         lateinit var guiConfig: GuiConfig
         lateinit var spawnConfig: SpawnConfig
         lateinit var recipeViewManager: RecipeViewManager
-        private lateinit var recipeList: Map<String, BreweryRecipe>
+        private lateinit var recipeMap: Map<String, BreweryRecipe>
 
         fun key(key: String): NamespacedKey {
             if (key.contains(":")) {
@@ -54,14 +61,19 @@ class Recipes : JavaPlugin() {
          * TBP can have a very late initialization on some recipes, use only post start
          */
         fun recipes(): Map<String, BreweryRecipe> {
-            if (this::recipeList.isInitialized && !recipeList.isEmpty()) {
-                return recipeList
+            if (this::recipeMap.isInitialized && !recipeMap.isEmpty()) {
+                return recipeMap
             }
-            recipeList = instance.loadRecipeProvider()!!
+            recipeMap = instance.loadRecipeProvider()!!
                 .asSequence()
                 .map { it.identifier to it }
                 .toMap()
-            return recipeList
+            return recipeMap
+        }
+        fun clearRecipeCache() {
+            if (this::recipeMap.isInitialized) {
+                recipeMap = emptyMap()
+            }
         }
     }
 
@@ -74,20 +86,25 @@ class Recipes : JavaPlugin() {
         storageImpl = DataManager(dataFolder).storageImpl
         recipeViewManager = RecipeViewManager(storageImpl)
 
-        val translator = RecipesTranslator(File(dataFolder, "locale"))
+        val translator = RecipesTranslator(File(dataFolder, "locale"), recipesConfig.language)
         translator.reload()
         GlobalTranslator.translator().addSource(translator)
-        // TODO: Add BreweryX integration
-        Bukkit.getPluginManager().registerEvents(GuiEventListener(this, TbpGuiInterface), this)
+        val guiIntegration = loadGuiIntegration()
+        Bukkit.getPluginManager().registerEvents(GuiEventListener(this, guiIntegration), this)
         Bukkit.getPluginManager().registerEvents(RecipeSpawningListener(), this)
+        Bukkit.getPluginManager().registerEvents(RecipeListener(guiIntegration), this)
+        Bukkit.getPluginManager().registerEvents(MigrationListener(), this)
         lifecycleManager.registerEventHandler(LifecycleEvents.COMMANDS) {
             it.registrar().register(RecipesCommand.command())
         }
+        val book = ShapelessRecipe(key("recipe_book"), BookUtil.createBook())
+        book.addIngredient(Material.PAPER)
+        book.addIngredient(Material.BOOK)
+        Bukkit.addRecipe(book)
     }
 
     private fun loadRecipeProvider(): List<BreweryRecipe>? {
-        try {
-            Class.forName("dev.jsinco.brewery.bukkit.api.TheBrewingProjectApi")
+        if (ClassUtil.exists("dev.jsinco.brewery.bukkit.api.TheBrewingProjectApi")) {
             if (!Bukkit.getServicesManager().isProvidedFor(TheBrewingProjectApi::class.java)) {
                 return null
             }
@@ -95,20 +112,27 @@ class Recipes : JavaPlugin() {
                 (Bukkit.getServicesManager().getRegistration(TheBrewingProjectApi::class.java)?.provider) ?: return null
             return provider.recipeRegistry.recipes
                 .map { TBPRecipeConverter.convert(it) }
-        } catch (ignored: NoClassDefFoundError) {
-            return null
         }
+        if (ClassUtil.exists("com.dre.brewery.recipe.BRecipe")) {
+            return BRecipe.getRecipes()
+                .map { BreweryXRecipeConverter.convert(it) }
+        }
+        throw IllegalStateException("Expected either BreweryX to be available or TBP")
+    }
+
+    private fun loadGuiIntegration(): GuiIntegration {
+        if (ClassUtil.exists("dev.jsinco.brewery.bukkit.api.TheBrewingProjectApi")) {
+            return TbpGuiInterface
+        }
+        if (ClassUtil.exists("com.dre.brewery.recipe.BRecipe")) {
+            return BreweryXGuiInterface
+        }
+        throw IllegalStateException("Expected either BreweryX to be available or TBP")
     }
 
     private fun readConfig(): RecipesConfig {
-        val serdesBuilder = SerdesPackBuilder()
-            .add(ComponentSerializer)
-            .add(KeySerializer)
-            .add(ConfigItemSerializer)
-            .add(ConfigItemCollectionSerializer)
-            .add(LoreSerializer)
         return ConfigManager.create(RecipesConfig::class.java) {
-            it.withConfigurer(YamlBukkitConfigurer(), serdesBuilder.build())
+            it.withConfigurer(YamlBukkitConfigurer(), configSerializers().build())
             it.withBindFile(File(this.dataFolder, "config.yml"))
             it.saveDefaults()
             it.load(true)
@@ -117,14 +141,8 @@ class Recipes : JavaPlugin() {
     }
 
     private fun readGuiConfig(): GuiConfig {
-        val serdesBuilder = SerdesPackBuilder()
-            .add(ComponentSerializer)
-            .add(KeySerializer)
-            .add(ConfigItemSerializer)
-            .add(ConfigItemCollectionSerializer)
-            .add(LoreSerializer)
         return ConfigManager.create(GuiConfig::class.java) {
-            it.withConfigurer(YamlBukkitConfigurer(), serdesBuilder.build())
+            it.withConfigurer(YamlBukkitConfigurer(), configSerializers().build())
             it.withBindFile(File(this.dataFolder, "gui.yml"))
             it.saveDefaults()
             it.load(true)
@@ -132,11 +150,24 @@ class Recipes : JavaPlugin() {
         }
     }
 
+    private fun configSerializers(): SerdesPackBuilder {
+        return SerdesPackBuilder()
+            .add(ComponentSerializer)
+            .add(KeySerializer)
+            .add(ConfigItemSerializer)
+            .add(ConfigItemCollectionSerializer)
+            .add(LoreSerializer)
+            .add(LocaleSerializer)
+            .add(ConditionsDefinitionSerializer)
+            .add(TriggersDefinitionSerializer)
+            .add(KeyedSerializer(RegistryKey.BLOCK, BlockType::class.java))
+            .add(KeyedSerializer(RegistryKey.BIOME, Biome::class.java))
+            .add(SpawnDefinitionSerializer)
+    }
+
     private fun readSpawnConfig(): SpawnConfig {
-        val serdesBuilder = SerdesPackBuilder()
-            .add(SpawnConfigSerializer)
         return ConfigManager.create(SpawnConfig::class.java) {
-            it.withConfigurer(YamlBukkitConfigurer(), serdesBuilder.build())
+            it.withConfigurer(YamlBukkitConfigurer(), configSerializers().build())
             it.withBindFile(File(this.dataFolder, "spawning.yml"))
             it.saveDefaults()
             it.load(true)
@@ -149,8 +180,13 @@ class Recipes : JavaPlugin() {
     }
 
     fun reload() {
+        clearRecipeCache()
         recipesConfig = readConfig()
         guiConfig = readGuiConfig()
         spawnConfig = readSpawnConfig()
+        val translator = RecipesTranslator(File(dataFolder, "locale"), recipesConfig.language)
+        GlobalTranslator.translator().removeSource(translator)
+        translator.reload() // no idea how this works lol, praying it does
+        GlobalTranslator.translator().addSource(translator)
     }
 }

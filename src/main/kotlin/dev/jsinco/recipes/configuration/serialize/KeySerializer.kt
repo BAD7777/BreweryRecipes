@@ -1,6 +1,5 @@
 package dev.jsinco.recipes.configuration.serialize
 
-import com.google.common.base.Preconditions
 import dev.jsinco.recipes.util.Logger
 import eu.okaeri.configs.schema.GenericsDeclaration
 import eu.okaeri.configs.serdes.DeserializationData
@@ -26,8 +25,8 @@ object KeySerializer : ObjectSerializer<Key> {
         generics: GenericsDeclaration
     ): Key? {
         val value = data.getValue(String::class.java)
-        if(!Key.parseable(value)) {
-            Logger.logErr("Could not parse key '$value' in ${data.context.field.name}")
+        if (!Key.parseable(value)) {
+            Logger.logErr("Could not parse key '$value' in ${data.context.field?.name ?: "unknown"}")
             return null
         }
         return Key.key(value)

@@ -1,86 +1,157 @@
 package dev.jsinco.recipes.configuration
 
-import dev.jsinco.recipes.spawning.BlockDropSpawnConfig
-import dev.jsinco.recipes.spawning.MobDropSpawnConfig
-import dev.jsinco.recipes.spawning.SpawnConfig
-import dev.jsinco.recipes.spawning.conditions.BiomeCondition
-import dev.jsinco.recipes.spawning.conditions.WorldCondition
+import dev.jsinco.recipes.configuration.spawning.ConditionsDefinition
+import dev.jsinco.recipes.configuration.spawning.SpawnDefinition
+import dev.jsinco.recipes.configuration.spawning.triggers.*
+import dev.jsinco.recipes.recipe.flaws.creation.RecipeViewCreator
 import eu.okaeri.configs.OkaeriConfig
 import eu.okaeri.configs.annotation.Comment
 import eu.okaeri.configs.annotation.CustomKey
+import org.bukkit.block.Biome
+import org.bukkit.block.BlockType
+import org.bukkit.entity.EntityType
+import org.bukkit.event.inventory.InventoryType
 
 class SpawnConfig : OkaeriConfig() {
 
+    //TODO: Rewrite comment
     @CustomKey("recipe-spawning")
     @Comment(
         "+-------------------------------------------------------------------------------------------+",
         "| This file is for specifying when and how recipes should randomly appear in your world(s). |",
         "+-------------------------------------------------------------------------------------------+",
         " ",
-        "Available 'type' values:",
-        "  CONTAINER   - When any container (chest, barrel, etc.) generates loot.",
-        "  CHEST       - When a chest specifically generates loot.",
-        "  BARREL      - When a barrel specifically generates loot.",
-        "  MINECART    - When a chest minecart generates loot (in mineshafts).",
-        "  FISHING     - When a player catches an item via fishing.",
-        "  MOB_DROP    - When a mob dies and drops items.",
-        "  BLOCK_DROP  - When a block is broken and drops items.",
-        "  LOOT        - When a specific loot table generates items (e.g. structure loot).",
-        " ",
-        "Common settings (available for all types):",
+        "Common settings:",
         "  enabled: <true|false>   - Optional. Enables or disables this spawn entry.",
         "  attempts: <number>      - How many times to attempt spawning a recipe per event.",
         "  chance: <0.0–1.0>       - Probability for each attempt (1.0 = 100% = always).",
         "  whitelist: <list>       - Only recipes with matching keys will be considered.",
         "  blacklist: <list>       - Recipes with these keys will not be spawned.",
+        "  flaws: <list>           - Optional. The flaws to choose to apply to a recipe",
+        "  flawless: <true|false>  - Optional. True if there's no flaw on this recipe",
         " ",
-        "Type-specific options:",
-        "  MOB_DROP:",
-        "    entities: <list>      - Entity types or tags (e.g. 'zombie', '#skeletons') that can drop recipes.",
+        "Triggers options:",
+        "  premade: <fishing|barrel|chest|minecart> - Optional. Premade triggers",
+        "  loot: <list>                             - Optional. Loot table triggers, see https://minecraft.wiki/w/Loot_table",
+        "  entities: <list>                         - Optional. A list of entities that should drop recipe loot when killed",
+        "  blocks: <list>                           - Optional. A list of blocks that should drop recipe loot when broken",
+        "  inventories: <list>                      - Optional. A list of inventory types that should populate recipe loot",
         " ",
-        "  BLOCK_DROP:",
-        "    blocks: <list>        - Block types or tags (e.g. 'ancient_debris', '#leaves') that can drop recipes.",
+        "Conditions (optional):",
+        "  biomes: <list> - Optional. Biomes the event has to occurred in",
+        "  worlds: <list> - Optional. Worlds the event has to occurred in",
         " ",
-        "  LOOT:",
-        "    lootTables: <list>    - Loot-table-keys (e.g. 'minecraft:chests/trial_chambers/intersection_barrel') that can generate",
-        "                            recipes as additional loot (only works for loot-tables that trigger the LootGenerateEvent).",
-        " ",
-        "Conditions (optional, shared across all types):",
-        "  Each condition defines additional restrictions under which recipes may spawn.",
-        " ",
-        "  Available condition types:",
-        "    - type: biome",
-        "      whitelist: [biome1, biome2, ...]  - Only allow in these biomes (works with- and without 'minecraft:' prefix).",
-        "      blacklist: [biome3, ...]          - No recipes will be spawned in these biomes.",
-        " ",
-        "    - type: world",
-        "      whitelist: [world, world_nether]  - Only allow in these worlds.",
-        "      blacklist: [world_the_end]        - Disallow these worlds.",
+        "Condition Blacklist (optional)",
+        "  biomes: <list> - Optional. Biomes the event has to not occurred in",
+        "  worlds: <list> - Optional. Worlds the event has to not occurred in",
         " ",
         "Your time to shine:"
     )
-    var recipeSpawning: ArrayList<SpawnConfig> = arrayListOf(
-        SpawnConfig.Builder(SpawnConfig.SpawnConfigType.CONTAINER)
-            .addCondition(WorldCondition(listOf(), listOf("norecipesworld")))
-            .addToBlacklist("ex")
-            .setChance(0.15)
-            .setAttempts(1)
-            .build(),
-        BlockDropSpawnConfig.Builder()
-            .addBlock("mushroom_stem")
-            .addBlock("red_mushroom_block")
-            .addBlock("brown_mushroom_block")
-            .addToWhitelist("shroom_vodka")
-            .setChance(0.075)
-            .setAttempts(1)
-            .build(),
-        MobDropSpawnConfig.Builder()
-            .addEntity("blaze")
-            .addCondition(BiomeCondition(listOf("nether_wastes", "crimson_forest")))
-            .addToWhitelist("fire_whiskey")
-            .setAttempts(1)
-            .setChance(1.0)
-            .build(),
+    var recipeSpawning: ArrayList<SpawnDefinition> = arrayListOf(
+        SpawnDefinition(
+            recipeBlacklist = listOf("ex"),
+            attempts = 1,
+            chance = 0.15,
+            flaws = listOf(RecipeViewCreator.Type.DRUNK),
+            triggers = TriggersDefinition(
+                lootSpawnTrigger = LootSpawnTrigger.fromStrings(
+                    "chests/shipwreck_supply",
+                    "chests/abandoned_mineshaft"
+                )
+            )
+        ),
+        SpawnDefinition(
+            recipeBlacklist = listOf("ex"),
+            attempts = 1,
+            chance = 0.05,
+            flaws = listOf(RecipeViewCreator.Type.DRUNK),
+            triggers = TriggersDefinition(
+                premadeTrigger = listOf(PremadeTrigger.FISHING)
+            )
+        ),
+        SpawnDefinition(
+            recipeBlacklist = listOf("ex"),
+            attempts = 1,
+            chance = 0.15,
+            flaws = listOf(RecipeViewCreator.Type.UNCERTAIN),
+            triggers = TriggersDefinition(
+                lootSpawnTrigger = LootSpawnTrigger.fromStrings(
+                    "chests/village/village_fisher",
+                    "chests/village/village_shepherd",
+                    "chests/village/village_temple",
+                    "chests/village/village_tannery",
+                    "chests/village/village_plains_house",
+                    "chests/village/village_savanna_house",
+                    "chests/village/village_desert_house",
+                    "chests/village/village_taiga_house",
+                    "chests/village/village_snowy_house",
+                    "chests/village/village_weaponsmith",
+                    "chests/village/village_toolsmith",
+                    "chests/village/village_butcher",
+                    "chests/village/village_mason",
+                    "chests/village/village_armorer"
+                )
+            )
+        ),
+        SpawnDefinition(
+            recipeBlacklist = listOf("ex"),
+            attempts = 1,
+            chance = 0.15,
+            flaws = listOf(RecipeViewCreator.Type.ENCRYPTED),
+            triggers = TriggersDefinition(
+                inventoryFillTrigger = InventoryFillTrigger(
+                    InventoryType.CHEST,
+                    InventoryType.BARREL
+                )
+            ),
+            conditions = ConditionsDefinition(
+                worldCondition = listOf("the_end")
+            )
+        ),
+        SpawnDefinition(
+            recipeBlacklist = listOf("ex"),
+            attempts = 1,
+            chance = 0.075,
+            triggers = TriggersDefinition(
+                inventoryFillTrigger = InventoryFillTrigger(
+                    InventoryType.CHEST,
+                    InventoryType.BARREL
+                )
+            ),
+            conditionBlacklist = ConditionsDefinition(
+                worldCondition = listOf("overworld")
+            )
+        ),
+        SpawnDefinition(
+            recipeWhitelist = listOf("shroom_vodka"),
+            attempts = 1,
+            chance = 0.0125,
+            flaws = listOf(RecipeViewCreator.Type.DRUNK),
+            triggers = TriggersDefinition(
+                blockDropTrigger = BlockDropTrigger(
+                    BlockType.MUSHROOM_STEM,
+                    BlockType.RED_MUSHROOM_BLOCK,
+                    BlockType.BROWN_MUSHROOM_BLOCK
+                )
+            )
+        ),
+        SpawnDefinition(
+            recipeWhitelist = listOf("fire_whiskey"),
+            attempts = 1,
+            chance = 0.075,
+            flaws = listOf(RecipeViewCreator.Type.ENCRYPTED),
+            triggers = TriggersDefinition(
+                mobDropTrigger = MobDropTrigger(
+                    EntityType.BLAZE
+                )
+            ),
+            conditions = ConditionsDefinition(
+                biomeCondition = listOf(
+                    Biome.NETHER_WASTES,
+                    Biome.CRIMSON_FOREST
+                )
+            )
+        )
     )
 
 }

@@ -14,7 +14,7 @@ plugins {
 }
 
 group = "dev.jsinco.recipes"
-version = "1.0.0"
+version = "1.0.2"
 
 repositories {
     mavenCentral()
@@ -27,11 +27,16 @@ repositories {
 
 dependencies {
     compileOnly("com.dre.brewery:BreweryX:3.4.5-SNAPSHOT#4")
-    compileOnly("io.papermc.paper:paper-api:1.21.8-R0.1-SNAPSHOT")
-    compileOnly("com.github.BreweryTeam:TheBrewingProject:v2.3.0")
+    compileOnly("io.papermc.paper:paper-api:1.21.10-R0.1-SNAPSHOT")
+    compileOnly("com.github.BreweryTeam:TheBrewingProject:feat~expose-config-to-api-SNAPSHOT")
     compileOnly("net.kyori:adventure-text-minimessage:4.24.0")
     implementation("eu.okaeri:okaeri-configs-yaml-bukkit:5.0.13")
     implementation("com.zaxxer:HikariCP:7.0.2")
+    testImplementation(platform("org.junit:junit-bom:6.0.1"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testImplementation("org.mockbukkit.mockbukkit:mockbukkit-v1.21:4.98.0")
+    testImplementation("io.papermc.paper:paper-api:1.21.10-R0.1-SNAPSHOT")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 
@@ -42,7 +47,7 @@ kotlin {
 sourceSets {
     main {
         java {
-             srcDirs("src/main/kotlin")
+            srcDirs("src/main/kotlin")
         }
     }
 }
@@ -84,11 +89,19 @@ tasks {
     }
 
     runServer {
-        minecraftVersion("1.21.8")
+        minecraftVersion("1.21.10")
         downloadPlugins {
-            modrinth("thebrewingproject", "2.3.0")
-            url("https://download.luckperms.net/1600/bukkit/loader/LuckPerms-Bukkit-5.5.14.jar")
+            if (project.findProperty("testing.with.tbp")!! == "true") {
+                modrinth("thebrewingproject", "2.3.0")
+            } else {
+                modrinth("breweryx", "3.6.0")
+            }
+            url("https://download.luckperms.net/1607/bukkit/loader/LuckPerms-Bukkit-5.5.18.jar")
         }
+    }
+
+    test {
+        useJUnitPlatform()
     }
 }
 
@@ -112,12 +125,13 @@ bukkit {
     main = "dev.jsinco.recipes.Recipes"
     foliaSupported = false
     apiVersion = "1.21"
-    authors = listOf("Jsinco", "Thorinwasher")
+    authors = listOf("Jsinco", "Thorinwasher, Mitality")
     name = rootProject.name
     permissions {
         register("recipes.command") {
-            children = listOf("recipes.command.give", "recipes.command.book")
+            children = listOf("recipes.command.add", "recipes.command.remove", "recipes.command.clear", "recipes.command.give", "recipes.command.givebook", "recipes.command.reload")
         }
+        register("recipes.override.view")
     }
     softDepend = listOf("BreweryX", "TheBrewingProject")
 }
