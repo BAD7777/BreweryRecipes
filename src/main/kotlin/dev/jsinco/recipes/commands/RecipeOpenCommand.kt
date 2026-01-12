@@ -32,7 +32,7 @@ object RecipeOpenCommand {
                             GuiManager.openRecipeGui(target)
                         }
                         return@executes 1
-                    }
+                    }.requires { it.sender.hasPermission("recipes.command.others") }
             )
     }
 
