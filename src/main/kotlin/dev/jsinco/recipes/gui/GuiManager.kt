@@ -3,6 +3,7 @@ package dev.jsinco.recipes.gui
 import dev.jsinco.recipes.Recipes
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 
 object GuiManager {
@@ -51,25 +52,30 @@ object GuiManager {
             return
         }
         
-        // Build new GUI
-        val recipeViews = if (isAdmin) {
-            Recipes.recipes().values.map { breweryRecipe -> breweryRecipe.generateCompletedView() }
-        } else {
-            Recipes.recipeViewManager.getViews(player.uniqueId)
-        }
-
-        val gui = RecipesGui(
-            player,
-            recipeViews.mapNotNull {
+        // Build new GUI asynchronously to avoid blocking main thread
+        CompletableFuture.supplyAsync {
+            if (isAdmin) {
+                Recipes.recipes().values.map { breweryRecipe -> breweryRecipe.generateCompletedView() }
+            } else {
+                Recipes.recipeViewManager.getViews(player.uniqueId)
+            }
+        }.thenAcceptAsync({ recipeViews ->
+            val items = recipeViews.mapNotNull {
                 Recipes.guiIntegration.createFullItem(it)
             }
-        )
-        gui.render()
-        
-        // Cache the GUI
-        guiCache[player.uniqueId] = CachedGuiData(gui, currentTime, isAdmin)
-        
-        gui.open()
+            
+            val gui = RecipesGui(player, items)
+            gui.render()
+            
+            // Cache the GUI
+            guiCache[player.uniqueId] = CachedGuiData(gui, currentTime, isAdmin)
+            
+            Bukkit.getScheduler().runTask(Recipes.instance) {
+                if (player.isOnline) {
+                    gui.open(player)
+                }
+            }
+        }, Bukkit.getScheduler().getMainThreadExecutor(Recipes.instance))
     }
     
     fun invalidateCache(playerUuid: java.util.UUID) {
