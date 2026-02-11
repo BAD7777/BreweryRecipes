@@ -6,6 +6,7 @@ import com.mojang.brigadier.context.CommandContext
 import dev.jsinco.recipes.Recipes
 import dev.jsinco.recipes.commands.argument.EnumArgument
 import dev.jsinco.recipes.commands.argument.RecipeArgumentType
+import dev.jsinco.recipes.gui.GuiManager
 import dev.jsinco.recipes.recipe.BreweryRecipe
 import dev.jsinco.recipes.recipe.flaws.creation.RecipeViewCreator
 import dev.jsinco.recipes.util.TranslationArgumentUtil
@@ -29,6 +30,7 @@ object RecipeAddCommand {
                     target.uniqueId,
                     recipe.generate(flawLevel, flawType)
                 )
+                GuiManager.invalidateCache(target.uniqueId)
             }
             context.source.sender.sendMessage(
                 Component.translatable(
