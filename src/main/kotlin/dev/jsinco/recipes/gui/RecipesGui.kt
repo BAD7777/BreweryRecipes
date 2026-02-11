@@ -20,6 +20,10 @@ class RecipesGui(
     private val pageRecipeCapacity = recipesSlots.size
     private val maxPages = Math.ceilDiv(recipes.size, pageRecipeCapacity)
     private var page = 0
+    
+    // Track what's currently rendered to avoid unnecessary updates
+    private var lastRenderedPage = -1
+    private val renderedRecipesBySlot = mutableMapOf<Int, GuiItem>()
 
     fun nextPage() {
         page = (page + 1).coerceAtMost(maxPages - 1)
@@ -45,7 +49,15 @@ class RecipesGui(
     }
 
     fun render() {
+        // Only re-render if page changed or initial render
+        if (lastRenderedPage == page) {
+            return
+        }
+        
         inventory.clear()
+        renderedRecipesBySlot.clear()
+        
+        // Render borders (static, no need to optimization)
         for (borderEntry in Recipes.guiConfig.borders) {
             val borderType = borderEntry.key
             val palette = borderEntry.value
@@ -56,6 +68,7 @@ class RecipesGui(
             }
         }
 
+        // Render page navigation and overrides (static)
         for (override in Recipes.guiConfig.overrides) {
             if (override.type == GuiItem.Type.PREVIOUS_PAGE && page == 0) continue
             if (override.type == GuiItem.Type.NEXT_PAGE && page + 1 >= maxPages) continue
@@ -65,12 +78,18 @@ class RecipesGui(
             }
         }
 
+        // Render recipes for current page
         val startPageContentIndex = page * pageRecipeCapacity
         val recipesToRead = minOf(pageRecipeCapacity, recipes.size - startPageContentIndex)
 
         for (i in 0 until recipesToRead) {
-            renderItem(recipes[i + startPageContentIndex], recipesSlots[i])
+            val slot = recipesSlots[i]
+            val item = recipes[i + startPageContentIndex]
+            renderItem(item, slot)
+            renderedRecipesBySlot[slot] = item
         }
+        
+        lastRenderedPage = page
     }
 
     fun renderItem(guiItem: GuiItem, position: Int) {
@@ -92,3 +111,4 @@ class RecipesGui(
 
     override fun getInventory() = inventory
 }
+
