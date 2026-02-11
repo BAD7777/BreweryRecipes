@@ -27,13 +27,30 @@ import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
 import org.bukkit.Material
 import org.bukkit.inventory.ItemStack
 import java.util.*
+import java.util.concurrent.ConcurrentHashMap
 
 object RecipeWriter {
 
     var cookingMinuteTicks = 20L * 60L
     var agingYearTicks = 20L * 60L * 20L
+    
+    // Cache for generated ItemStacks
+    private val itemStackCache = ConcurrentHashMap<String, ItemStack>()
+    private val cacheTimestamps = ConcurrentHashMap<String, Long>()
+    private const val CACHE_LIFETIME_MS = 300000L // 5 minutes
 
     fun writeItem(recipeView: RecipeView, guiIntegration: GuiIntegration): ItemStack? {
+        // Try to get from cache first
+        val cacheKey = generateCacheKey(recipeView)
+        itemStackCache[cacheKey]?.let { cached ->
+            if (isCacheValid(cacheKey)) {
+                return cached.clone()
+            } else {
+                itemStackCache.remove(cacheKey)
+                cacheTimestamps.remove(cacheKey)
+            }
+        }
+        
         cookingMinuteTicks = guiIntegration.cookingMinuteTicks()
         agingYearTicks = guiIntegration.agingYearTicks()
         val recipe = Recipes.recipes()[recipeView.recipeIdentifier] ?: return null
@@ -69,7 +86,28 @@ object RecipeWriter {
                 .colorIfAbsent(NamedTextColor.WHITE)
                 .decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE)
         )
+        
+        // Cache the result
+        itemStackCache[cacheKey] = item.clone()
+        cacheTimestamps[cacheKey] = System.currentTimeMillis()
+        
         return item
+    }
+    
+    private fun generateCacheKey(recipeView: RecipeView): String =
+        recipeView.recipeIdentifier + ":" + recipeView.flaws.hashCode() + ":" + recipeView.invertedReveals.hashCode()
+    
+    private fun isCacheValid(cacheKey: String): Boolean =
+        (System.currentTimeMillis() - (cacheTimestamps[cacheKey] ?: 0L)) < CACHE_LIFETIME_MS
+    
+    fun clearCache() {
+        itemStackCache.clear()
+        cacheTimestamps.clear()
+    }
+    
+    fun clearCacheForRecipe(recipeIdentifier: String) {
+        itemStackCache.keys.removeIf { it.startsWith(recipeIdentifier + ":") }
+        cacheTimestamps.keys.removeIf { it.startsWith(recipeIdentifier + ":") }
     }
 
     private fun buildBaseStep(step: Step): Component {
