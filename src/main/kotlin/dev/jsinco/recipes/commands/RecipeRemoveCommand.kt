@@ -4,6 +4,7 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder
 import com.mojang.brigadier.context.CommandContext
 import dev.jsinco.recipes.Recipes
 import dev.jsinco.recipes.commands.argument.RecipeArgumentType
+import dev.jsinco.recipes.gui.GuiManager
 import dev.jsinco.recipes.recipe.BreweryRecipe
 import dev.jsinco.recipes.util.TranslationArgumentUtil
 import io.papermc.paper.command.brigadier.CommandSourceStack
@@ -24,6 +25,7 @@ object RecipeRemoveCommand {
                     target.uniqueId,
                     recipe.identifier
                 )
+                GuiManager.invalidateCache(target.uniqueId)
             }
             context.source.sender.sendMessage(
                 Component.translatable(
