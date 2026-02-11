@@ -1,6 +1,7 @@
 package dev.jsinco.recipes.listeners
 
 import com.destroystokyo.paper.profile.PlayerProfile
+import dev.jsinco.recipes.gui.GuiManager
 import dev.jsinco.recipes.recipe.RecipeViewManager
 import io.papermc.paper.connection.PlayerConfigurationConnection
 import io.papermc.paper.connection.PlayerLoginConnection
@@ -32,6 +33,8 @@ class PlayerEventListener(private val recipeViewManager: RecipeViewManager): Lis
 
     @EventHandler
     fun onPlayerQuit(event: PlayerQuitEvent) {
-        recipeViewManager.scheduleViewsUnload(event.player.uniqueId)
+        val uuid = event.player.uniqueId
+        recipeViewManager.scheduleViewsUnload(uuid)
+        GuiManager.invalidateCache(uuid)
     }
 }
