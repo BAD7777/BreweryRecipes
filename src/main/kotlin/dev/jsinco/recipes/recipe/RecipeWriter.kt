@@ -104,6 +104,17 @@ object RecipeWriter {
         itemStackCache.clear()
         cacheTimestamps.clear()
     }
+
+    fun cleanupExpiredCache() {
+        val currentTime = System.currentTimeMillis()
+        val expiredKeys = itemStackCache.keys.filter { key ->
+            !isCacheValid(key)
+        }
+        expiredKeys.forEach {
+            itemStackCache.remove(it)
+            cacheTimestamps.remove(it)
+        }
+    }
     
     fun clearCacheForRecipe(recipeIdentifier: String) {
         itemStackCache.keys.removeIf { it.startsWith(recipeIdentifier + ":") }
