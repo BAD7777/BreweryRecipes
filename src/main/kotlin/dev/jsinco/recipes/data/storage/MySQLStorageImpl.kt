@@ -5,11 +5,11 @@ import com.google.gson.JsonPrimitive
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import dev.jsinco.recipes.Recipes
-import dev.jsinco.recipes.recipe.RecipeView
 import dev.jsinco.recipes.data.StorageImpl
 import dev.jsinco.recipes.data.StorageType
 import dev.jsinco.recipes.data.serdes.FlawSerdes
 import dev.jsinco.recipes.data.serdes.Serdes
+import dev.jsinco.recipes.recipe.RecipeView
 import dev.jsinco.recipes.util.Logger
 import dev.jsinco.recipes.util.UuidUtil
 import java.sql.PreparedStatement
@@ -109,32 +109,35 @@ class MySQLStorageImpl : StorageImpl {
         }
     }
 
-    override fun selectAllRecipeViews(): CompletableFuture<Map<UUID, MutableList<RecipeView>>?> {
+    override fun selectRecipeViews(playerUuid: UUID): CompletableFuture<List<RecipeView>?> {
         return runStatement(
             """
-                SELECT * FROM ${Recipes.recipesConfig.storage.mysql.prefix}recipe_view;
+                SELECT recipe_key, recipe_flaws, inverted_reveals FROM ${Recipes.recipesConfig.storage.mysql.prefix}recipe_view
+                    WHERE player_uuid = ?;
             """
         ) {
+            it.setBytes(1, UuidUtil.toBytes(playerUuid))
             val result = it.executeQuery()
-            val output = mutableMapOf<UUID, MutableList<RecipeView>>()
+            val output = mutableListOf<RecipeView>()
             while (result.next()) {
-                val recipeViews = output.computeIfAbsent(UuidUtil.asUuid(result.getBytes("player_uuid"))) {
-                    mutableListOf()
-                }
-                recipeViews.add(
-                    RecipeView(
-                        result.getString("recipe_key"),
-                        Serdes.deserializeList(
-                            JsonParser.parseString(result.getString("recipe_flaws")).asJsonArray,
-                            FlawSerdes::deserializeFlaw
-                        ),
-                        Serdes.deserializeList(JsonParser.parseString(result.getString("inverted_reveals")).asJsonArray) {jsonArray ->
-                            Serdes.deserializeSet(jsonArray.asJsonArray) { element ->
-                                element.asInt
-                            }
-                        }
-                    )
+                val flaws = Serdes.deserializeList(
+                    JsonParser.parseString(result.getString("recipe_flaws")).asJsonArray,
+                    FlawSerdes::deserializeFlaw
                 )
+                val recipeView = RecipeView(
+                    result.getString("recipe_key"),
+                    flaws,
+                    Serdes.deserializeList(JsonParser.parseString(result.getString("inverted_reveals")).asJsonArray) { jsonArray ->
+                        Serdes.deserializeSet(jsonArray.asJsonArray) { element ->
+                            element.asInt
+                        }
+                    }
+                )
+                output.add(recipeView)
+                // Replace views that were previously allowed to have infinite flaws
+                if (flaws.size > 10) {
+                    insertOrUpdateRecipeView(playerUuid, recipeView)
+                }
             }
             return@runStatement output
         }

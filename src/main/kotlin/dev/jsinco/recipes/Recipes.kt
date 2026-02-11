@@ -8,17 +8,14 @@ import dev.jsinco.recipes.configuration.RecipesConfig
 import dev.jsinco.recipes.configuration.RecipesTranslator
 import dev.jsinco.recipes.configuration.SpawnConfig
 import dev.jsinco.recipes.configuration.serialize.*
-import dev.jsinco.recipes.recipe.BreweryRecipe
-import dev.jsinco.recipes.recipe.RecipeViewManager
 import dev.jsinco.recipes.data.DataManager
 import dev.jsinco.recipes.data.StorageImpl
 import dev.jsinco.recipes.gui.integration.BreweryXGuiInterface
 import dev.jsinco.recipes.gui.integration.GuiIntegration
 import dev.jsinco.recipes.gui.integration.TbpGuiInterface
-import dev.jsinco.recipes.listeners.GuiEventListener
-import dev.jsinco.recipes.listeners.MigrationListener
-import dev.jsinco.recipes.listeners.RecipeListener
-import dev.jsinco.recipes.listeners.RecipeSpawningListener
+import dev.jsinco.recipes.listeners.*
+import dev.jsinco.recipes.recipe.BreweryRecipe
+import dev.jsinco.recipes.recipe.RecipeViewManager
 import dev.jsinco.recipes.util.BookUtil
 import dev.jsinco.recipes.util.BreweryXRecipeConverter
 import dev.jsinco.recipes.util.ClassUtil
@@ -48,6 +45,7 @@ class Recipes : JavaPlugin() {
         lateinit var guiConfig: GuiConfig
         lateinit var spawnConfig: SpawnConfig
         lateinit var recipeViewManager: RecipeViewManager
+        lateinit var guiIntegration: GuiIntegration
         private lateinit var recipeMap: Map<String, BreweryRecipe>
 
         fun key(key: String): NamespacedKey {
@@ -70,6 +68,7 @@ class Recipes : JavaPlugin() {
                 .toMap()
             return recipeMap
         }
+
         fun clearRecipeCache() {
             if (this::recipeMap.isInitialized) {
                 recipeMap = emptyMap()
@@ -85,15 +84,16 @@ class Recipes : JavaPlugin() {
         spawnConfig = readSpawnConfig()
         storageImpl = DataManager(dataFolder).storageImpl
         recipeViewManager = RecipeViewManager(storageImpl)
+        guiIntegration = loadGuiIntegration()
 
         val translator = RecipesTranslator(File(dataFolder, "locale"), recipesConfig.language)
         translator.reload()
         GlobalTranslator.translator().addSource(translator)
-        val guiIntegration = loadGuiIntegration()
-        Bukkit.getPluginManager().registerEvents(GuiEventListener(this, guiIntegration), this)
+        Bukkit.getPluginManager().registerEvents(GuiEventListener(), this)
         Bukkit.getPluginManager().registerEvents(RecipeSpawningListener(), this)
-        Bukkit.getPluginManager().registerEvents(RecipeListener(guiIntegration), this)
+        Bukkit.getPluginManager().registerEvents(RecipeListener(), this)
         Bukkit.getPluginManager().registerEvents(MigrationListener(), this)
+        Bukkit.getPluginManager().registerEvents(PlayerEventListener(recipeViewManager), this)
         lifecycleManager.registerEventHandler(LifecycleEvents.COMMANDS) {
             it.registrar().register(RecipesCommand.command())
         }
@@ -101,6 +101,12 @@ class Recipes : JavaPlugin() {
         book.addIngredient(Material.PAPER)
         book.addIngredient(Material.BOOK)
         Bukkit.addRecipe(book)
+        Bukkit.getGlobalRegionScheduler().runAtFixedRate(
+            this,
+            { recipeViewManager.tick() },
+            1,
+            20
+        )
     }
 
     private fun loadRecipeProvider(): List<BreweryRecipe>? {

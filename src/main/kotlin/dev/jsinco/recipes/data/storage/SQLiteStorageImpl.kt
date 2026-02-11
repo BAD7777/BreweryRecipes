@@ -104,32 +104,35 @@ class SQLiteStorageImpl(private val dataFolder: File) : StorageImpl {
         }
     }
 
-    override fun selectAllRecipeViews(): CompletableFuture<Map<UUID, MutableList<RecipeView>>?> {
+    override fun selectRecipeViews(playerUuid: UUID): CompletableFuture<List<RecipeView>?> {
         return runStatement(
             """
-                SELECT * FROM recipe_view;
+                SELECT recipe_key, recipe_flaws, inverted_reveals FROM recipe_view
+                    WHERE player_uuid = ?;
             """.trimIndent()
         ) {
+            it.setBytes(1, UuidUtil.toBytes(playerUuid))
             val result = it.executeQuery()
-            val output = mutableMapOf<UUID, MutableList<RecipeView>>()
+            val output = mutableListOf<RecipeView>()
             while (result.next()) {
-                val recipeViews = output.computeIfAbsent(UuidUtil.asUuid(result.getBytes("player_uuid"))) {
-                    mutableListOf()
-                }
-                recipeViews.add(
-                    RecipeView(
-                        result.getString("recipe_key"),
-                        Serdes.deserializeList(
-                            JsonParser.parseString(result.getString("recipe_flaws")).asJsonArray,
-                            FlawSerdes::deserializeFlaw
-                        ),
-                        Serdes.deserializeList(JsonParser.parseString(result.getString("inverted_reveals")).asJsonArray) {jsonArray ->
-                            Serdes.deserializeSet(jsonArray.asJsonArray) { element ->
-                                element.asInt
-                            }
-                        }
-                    )
+                val flaws = Serdes.deserializeList(
+                    JsonParser.parseString(result.getString("recipe_flaws")).asJsonArray,
+                    FlawSerdes::deserializeFlaw
                 )
+                val recipeView = RecipeView(
+                    result.getString("recipe_key"),
+                    flaws,
+                    Serdes.deserializeList(JsonParser.parseString(result.getString("inverted_reveals")).asJsonArray) { jsonArray ->
+                        Serdes.deserializeSet(jsonArray.asJsonArray) { element ->
+                            element.asInt
+                        }
+                    }
+                )
+                output.add(recipeView)
+                // Replace views that were previously allowed to have infinite flaws
+                if (flaws.size > 10) {
+                    insertOrUpdateRecipeView(playerUuid, recipeView)
+                }
             }
             return@runStatement output
         }
