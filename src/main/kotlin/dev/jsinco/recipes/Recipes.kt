@@ -194,5 +194,8 @@ class Recipes : JavaPlugin() {
         GlobalTranslator.translator().removeSource(translator)
         translator.reload() // no idea how this works lol, praying it does
         GlobalTranslator.translator().addSource(translator)
+        // Clear all caches on reload
+        dev.jsinco.recipes.recipe.RecipeWriter.clearCache()
+        dev.jsinco.recipes.gui.GuiManager.invalidateAllCaches()
     }
 }
