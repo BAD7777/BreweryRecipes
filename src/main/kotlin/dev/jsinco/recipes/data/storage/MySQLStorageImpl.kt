@@ -75,8 +75,8 @@ class MySQLStorageImpl : StorageImpl {
     ): CompletableFuture<Void?> {
         return runStatement(
             """
-                INSERT OR REPLACE INTO ${Recipes.recipesConfig.storage.mysql.prefix}recipe_view
-                  VALUES(?,?,?);
+                REPLACE INTO ${Recipes.recipesConfig.storage.mysql.prefix}recipe_view
+                  VALUES(?,?,?,?);
             """
         ) {
             it.setBytes(1, UuidUtil.toBytes(playerUuid))
