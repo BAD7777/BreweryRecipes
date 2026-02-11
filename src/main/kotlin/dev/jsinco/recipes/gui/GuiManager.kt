@@ -10,6 +10,7 @@ object GuiManager {
     
     private val guiCache = ConcurrentHashMap<java.util.UUID, CachedGuiData>()
     private val lastOpenTime = ConcurrentHashMap<java.util.UUID, Long>()
+    private val inventoryLocks = ConcurrentHashMap<java.util.UUID, Boolean>()
     
     // Debounce time in milliseconds
     private const val DEBOUNCE_MS = 50L
@@ -43,39 +44,60 @@ object GuiManager {
         lastOpenTime[player.uniqueId] = currentTime
         
         val isAdmin = player.hasPermission("recipes.override.view")
-        val cachedData = guiCache[player.uniqueId]
+        val playerUuid = player.uniqueId
+        val cachedData = guiCache[playerUuid]
         
         // Use cached GUI if admin mode hasn't changed and cache is still valid
         if (cachedData != null && cachedData.adminMode == isAdmin && 
             (currentTime - cachedData.timestamp) < CACHE_LIFETIME_MS) {
-            cachedData.gui.open(player)
+            // Open cached GUI on main thread with minimal overhead
+            Bukkit.getScheduler().runTask(Recipes.instance, Runnable {
+                if (player.isOnline) {
+                    // Just open the cached inventory - super fast!
+                    player.openInventory(cachedData.gui.getInventory())
+                }
+            })
             return
         }
         
-        // Build new GUI asynchronously to avoid blocking main thread
+        // Mark as loading to prevent race conditions
+        inventoryLocks[playerUuid] = true
+        
+        // Build new GUI completely asynchronously
         CompletableFuture.supplyAsync {
             if (isAdmin) {
                 Recipes.recipes().values.map { breweryRecipe -> breweryRecipe.generateCompletedView() }
             } else {
-                Recipes.recipeViewManager.getViews(player.uniqueId)
+                Recipes.recipeViewManager.getViews(playerUuid)
             }
-        }.thenAcceptAsync({ recipeViews ->
+        }.thenApplyAsync { recipeViews ->
+            // Create items asynchronously - this is the expensive part
             val items = recipeViews.mapNotNull {
                 Recipes.guiIntegration.createFullItem(it)
             }
             
             val gui = RecipesGui(player, items)
             gui.render()
+            gui
+        }.thenAcceptAsync({ gui ->
+            // Only cache and open on main thread
+            guiCache[playerUuid] = CachedGuiData(gui, currentTime, isAdmin)
             
-            // Cache the GUI
-            guiCache[player.uniqueId] = CachedGuiData(gui, currentTime, isAdmin)
-            
-            Bukkit.getScheduler().runTask(Recipes.instance) {
+            Bukkit.getScheduler().runTask(Recipes.instance, Runnable {
                 if (player.isOnline) {
-                    gui.open(player)
+                    player.openInventory(gui.getInventory())
                 }
+                inventoryLocks.remove(playerUuid)
+            })
+        }, { command ->
+            // Error handler - clear lock and log
+            inventoryLocks.remove(playerUuid)
+            try {
+                command.run()
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
-        }, Bukkit.getScheduler().getMainThreadExecutor(Recipes.instance))
+        })
     }
     
     fun invalidateCache(playerUuid: java.util.UUID) {
