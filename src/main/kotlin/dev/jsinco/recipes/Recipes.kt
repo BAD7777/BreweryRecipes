@@ -16,6 +16,7 @@ import dev.jsinco.recipes.gui.integration.TbpGuiInterface
 import dev.jsinco.recipes.listeners.*
 import dev.jsinco.recipes.recipe.BreweryRecipe
 import dev.jsinco.recipes.recipe.RecipeViewManager
+import dev.jsinco.recipes.recipe.RecipeWriter
 import dev.jsinco.recipes.util.BookUtil
 import dev.jsinco.recipes.util.BreweryXRecipeConverter
 import dev.jsinco.recipes.util.ClassUtil
@@ -106,6 +107,13 @@ class Recipes : JavaPlugin() {
             { recipeViewManager.tick() },
             1,
             20
+        )
+        // Clean up expired RecipeWriter cache every 30 seconds
+        Bukkit.getGlobalRegionScheduler().runAtFixedRate(
+            this,
+            { RecipeWriter.cleanupExpiredCache() },
+            600,  // 30 seconds
+            600   // Repeat every 30 seconds
         )
     }
 
